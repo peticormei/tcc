@@ -2,6 +2,10 @@
 
 #define echoPin_L A0
 #define triggerPin_L A1
+
+#define echoPin_F A2
+#define triggerPin_F A3
+
 #define echoPin_R A4
 #define triggerPin_R A5
 
@@ -27,12 +31,24 @@ volatile int counter_motor_3 = 0;
 volatile byte bumper_l = HIGH;
 volatile byte bumper_r = HIGH;
 
+byte old_state_2 = LOW;
+  
 void ISR_MOTOR_2() {
-  counter_motor_2++;
+  byte encoder_state = digitalRead(MOTOR_2);
+  if (encoder_state == HIGH && old_state_2 != encoder_state) {
+    counter_motor_2++;
+  }
+  old_state_2 = encoder_state;
 }
 
+byte old_state_3 = LOW;
+
 void ISR_MOTOR_3() {
-  counter_motor_3++;
+  byte encoder_state = digitalRead(MOTOR_3);
+  if (encoder_state == HIGH && old_state_3 != encoder_state) {
+    counter_motor_3++;
+  }
+  old_state_3 = encoder_state;
 }
 
 void ISR_Bumper_L() {
@@ -69,16 +85,11 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Motor test!");
 
-  attachInterrupt(digitalPinToInterrupt (MOTOR_2), ISR_MOTOR_2, RISING);
-  attachInterrupt(digitalPinToInterrupt (MOTOR_3), ISR_MOTOR_3, RISING);
+  attachInterrupt(digitalPinToInterrupt (MOTOR_2), ISR_MOTOR_2, CHANGE);
+  attachInterrupt(digitalPinToInterrupt (MOTOR_3), ISR_MOTOR_3, CHANGE);
 
   attachInterrupt(digitalPinToInterrupt (BUMPER_BTN_L), ISR_Bumper_L, CHANGE);
   attachInterrupt(digitalPinToInterrupt (BUMPER_BTN_R), ISR_Bumper_R, CHANGE);
-
-  motor1.setSpeed(255);
-  motor2.setSpeed(255);
-  motor3.setSpeed(255);
-  motor4.setSpeed(255);
 
   pinMode(BUMPER_BTN_L, INPUT);
   pinMode(BUMPER_BTN_R, INPUT);
@@ -91,56 +102,24 @@ void setup() {
 }
 
 void loop() {
+  int distance_f = getDistance(triggerPin_F, echoPin_F);
   int distance_r = getDistance(triggerPin_R, echoPin_R);
   int distance_l = getDistance(triggerPin_L, echoPin_L);
-  
-  if (bumper_l == LOW && bumper_r == LOW) {
-    motor1.run(RELEASE);
-    motor2.run(RELEASE);
-    motor3.run(RELEASE);
-    motor4.run(RELEASE);
-
-    counter_motor_2 = 0;
-    counter_motor_3 = 0;
-    
-    Serial.print("Stop! ");
-
- } else if (bumper_l == HIGH && bumper_r == LOW) {
-    motor1.run(BACKWARD);
-    motor2.run(BACKWARD);
-    motor3.run(FORWARD);
-    motor4.run(FORWARD);
-
-    counter_motor_2 = 0;
-    counter_motor_3 = 0;
-
-    Serial.print("Turn left! ");
-   
- } else if (bumper_l == LOW && bumper_r == HIGH) {
-    motor1.run(FORWARD);
-    motor2.run(FORWARD);
-    motor3.run(BACKWARD);
-    motor4.run(BACKWARD);
-
-    counter_motor_2 = 0;
-    counter_motor_3 = 0;
-
-    Serial.print("Turn right! ");
- } else {
-    motor1.run(FORWARD);
-    motor2.run(FORWARD);
-    motor3.run(FORWARD);
-    motor4.run(FORWARD);
-
-    Serial.print("Forward! ");
-  }
 
   Serial.print("Motor Left: ");
   Serial.print(counter_motor_2);
   Serial.print(" Motor Right: ");
   Serial.print(counter_motor_3);
-  Serial.print(" HC-SR04 Rear: ");
+  
+  Serial.print(" Bumper Left: ");
+  Serial.print(bumper_l);
+  Serial.print(" Bumper Right: ");
+  Serial.print(bumper_r);
+
+  Serial.print(" HC-SR04 Left: ");
   Serial.print(distance_l);
+  Serial.print(" HC-SR04 Right: ");
+  Serial.print(distance_r);
   Serial.print(" HC-SR04 Front: ");
-  Serial.println(distance_r);
+  Serial.println(distance_f);
 }
