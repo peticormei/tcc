@@ -93,12 +93,12 @@ void dmpDataReady()
   mpuInterrupt = true;
 }
 
-int turnSpeed = 130;
+int turnSpeed = 125;
 double heading, modifiedTargetHeading, motorOffsetOutput, motorOffsetTurnOutput;
 double headingTarget = 0.0;
 
 PID steeringPID;
-// PID turnPID;
+PID turnPID;
 
 bool firstLoop = true;
 double initialPose;
@@ -108,7 +108,6 @@ bool debug = false;
 
 // AUX
 #define NONE 0
-#define IMU_WARM 1
 
 // STATE
 #define PULL 4
@@ -137,7 +136,7 @@ int turn_samples = 0;
 
 void waitGyroStabilize()
 {
-  int secondsToWait = 15;
+  int secondsToWait = 5;
 
   Serial.println(F("Stabilizing..."));
 
@@ -163,6 +162,8 @@ void setup()
 {
   #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
     Wire.begin();
+    Wire.setClock(400000);
+    Wire.setWireTimeout(3000, true);
   #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
     Fastwire::setup(400, true);
   #endif
@@ -231,9 +232,9 @@ void setup()
   pinMode(ECHO_PIN_RIGHT, INPUT);
   pinMode(TRIGGER_PIN_RIGHT, OUTPUT);
 
-  steeringPID.Setup(&modifiedTargetHeading, &motorOffsetOutput, &headingTarget, 1.5, 4, 0.4, DIRECT);
+  steeringPID.Setup(&modifiedTargetHeading, &motorOffsetOutput, &headingTarget, 2.88, 1.32, 0.27, DIRECT);
 
-  steeringPID.SetOutputLimits(-20.0, 20.0);
+  steeringPID.SetOutputLimits(-35.0, 35.0);
   steeringPID.SetSampleTime(10);
   steeringPID.SetMode(AUTOMATIC);
 
@@ -243,12 +244,30 @@ void setup()
   // turnPID.Setup(&modifiedTargetHeading, &motorOffsetOutput, &headingTarget, 1.05, 0.118, 0.005, DIRECT);
 
   // turnPID.Setup(&modifiedTargetHeading, &motorOffsetOutput, &headingTarget, 1.05, 0.53, 0.0005, DIRECT);
-  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.66, 0, 0, DIRECT);
 
-  // turnPID.SetOutputLimits(90, 110);
-  // turnPID.SetSampleTime(10);
-  // turnPID.SetMode(AUTOMATIC);
+  // PIVOT FALSE
+  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.89, 1.22, 0.31, DIRECT); // ESSE 21 resto
+  // turnPID.Setup(&heading, &motorOffsetTurnOutput, &headingTarget, 0.89, 1.22, 0.31, DIRECT); // ESSE 21 resto
 
+  // PIVOT TRUE
+  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.78, 0.118, 0.05, DIRECT);
+  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.54, 0.81, 0.17, DIRECT);
+  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.6, 0.8, 0.15, DIRECT);
+  // turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 0.66, 0.118, 0.17, DIRECT);
+
+
+  turnPID.Setup(&modifiedTargetHeading, &motorOffsetTurnOutput, &headingTarget, 1.05, 0.118, 0.31, DIRECT); // ESSE 90 pivot
+
+  // PIVOT FALSE
+  // turnPID.SetOutputLimits(-125, 125);
+
+  // PIVOT TRUE
+  turnPID.SetOutputLimits(-110, 110);
+  turnPID.SetSampleTime(10);
+  turnPID.SetMode(AUTOMATIC);
+
+
+  Command = NONE;
   setTargetHeading(0.0);
 
   waitGyroStabilize();
@@ -354,15 +373,7 @@ int GetQuadrant() {
   }
 }
 
-// void UpdateTurnPIDDirection() {
-//   if (headingTarget > 0) {
-//     turnPID.SetControllerDirection(DIRECT);
-//   } else {
-//     turnPID.SetControllerDirection(REVERSE);
-//   }
-// }
-
-void TurnCommand()
+void TurnCommand2()
 {
   State = MOVING;
 
@@ -430,6 +441,135 @@ void TurnCommand()
       }
     }
   // }
+}
+
+bool pivot = true;
+
+int left_turn_sample = 0;
+int right_turn_sample = 0;
+
+void TurnLeft()
+{
+  if (!pivot) {
+    motor_right.setSpeed(0);
+    motor_right.run(RELEASE);
+  }
+
+  double diff = abs(headingTarget) - abs(heading);
+
+  if (abs(diff) < 2.25) {
+    left_turn_sample += 1;
+
+    motor_left.setSpeed(0);
+    motor_left.run(RELEASE);
+
+    if (pivot) {
+      motor_right.setSpeed(0);
+      motor_right.run(RELEASE);
+    }
+
+    if (left_turn_sample >= 100) {
+      left_turn_sample = 0;
+      State = PULL;
+    }
+  } else {
+    left_turn_sample -= 1;
+
+    int quadrant = GetQuadrant();
+
+    if (motorOffsetTurnOutput > 0 && quadrant != Q3) {
+      motor_left.run(FORWARD);
+      if (pivot) {
+        motor_right.run(BACKWARD);
+      }
+    } else {
+      motor_left.run(BACKWARD);
+      if (pivot) {
+        motor_right.run(FORWARD);
+      }
+    }
+
+    int pid_speed = int(abs(motorOffsetTurnOutput));
+
+    motor_left.setSpeed(pid_speed);
+    if (pivot) {
+      motor_right.setSpeed(pid_speed);
+    }
+  }
+}
+
+void TurnRight()
+{
+  if (!pivot) {
+    motor_left.setSpeed(0);
+    motor_left.run(RELEASE);
+  }
+
+  double diff = abs(headingTarget) - abs(heading);
+
+  if (abs(diff) < 2.25) {
+    right_turn_sample += 1;
+
+    motor_right.setSpeed(0);
+    motor_right.run(RELEASE);
+
+    if (pivot) {
+      motor_left.setSpeed(0);
+      motor_left.run(RELEASE);
+    }
+
+    if (right_turn_sample >= 100) {
+      right_turn_sample = 0;
+      State = PULL;
+    }
+  } else {
+    right_turn_sample -= 1;
+
+    int quadrant = GetQuadrant();
+
+    if (motorOffsetTurnOutput > 0 && quadrant != Q4) {
+      motor_right.run(FORWARD);
+      if (pivot) {
+        motor_left.run(BACKWARD);
+      }
+    } else {
+      motor_right.run(BACKWARD);
+      if (pivot) {
+        motor_left.run(FORWARD);
+      }
+    }
+
+    int pid_speed = int(abs(motorOffsetTurnOutput));
+
+    motor_right.setSpeed(pid_speed);
+    if (pivot) {
+      motor_left.setSpeed(pid_speed);
+    }
+  }
+}
+
+void UpdateTurnPIDDirection() {
+  if (headingTarget > 0) {
+    turnPID.SetControllerDirection(DIRECT);
+  } else {
+    turnPID.SetControllerDirection(REVERSE);
+  }
+}
+
+
+void TurnCommand() {
+
+  State = MOVING;
+
+  UpdateTurnPIDDirection();
+
+  if (turnPID.Compute()) {
+    if (headingTarget < 0) {
+      TurnLeft();
+    } else {
+      TurnRight();
+    }
+  }
 }
 
 void cleanMotorEncoders () {
@@ -521,16 +661,16 @@ void ExecuteCommand() {
 }
 
 void UpdateReferencePID() {
-  if (abs(heading - headingTarget) > 180.0) {
-    if (heading >= 0) {
-      modifiedTargetHeading = heading - 360.0;
+    if (abs(heading - headingTarget) > 180.0) {
+      if (heading >= 0) {
+        modifiedTargetHeading = heading - 360.0;
+      }
+      else {
+        modifiedTargetHeading = heading + 360.0;
+      }
+    } else {
+      modifiedTargetHeading = heading;
     }
-    else {
-      modifiedTargetHeading = heading + 360.0;
-    }
-  } else {
-    modifiedTargetHeading = heading;
-  }
 }
 
 void UpdateSensors() {
